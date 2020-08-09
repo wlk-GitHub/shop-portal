@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- 上述3个meta标签*必须*放在最前面，任何其他内容都*必须*跟随其后！ -->
+
+    <link rel="icon" href="js/shop/assets/img/favicon.ico">
+    <link rel="stylesheet" type="text/css" href="js/shop/css/webbase.css" />
+    <link rel="stylesheet" type="text/css" href="js/shop/css/pages-JD-index.css" />
+    <link rel="stylesheet" type="text/css" href="js/shop/css/widget-jquery.autocomplete.css" />
+    <link rel="stylesheet" type="text/css" href="js/shop/css/widget-cartPanelView.css" />
+    <title>商城首页</title>
+</head>
+<body>
+<div id="nav-bottom">
+    <!--顶部-->
+    <div class="nav-top">
+        <!--头部-->
+        <div class="header">
+            <div class="py-container">
+                <div class="yui3-g NavList">
+                    <div class="yui3-u Left all-sort">
+                        <h4>全部商品分类</h4>
+                    </div>
+                    <div class="yui3-u Center navArea">
+                        <ul class="nav">
+                            <li class="f-item">服装城</li>
+                            <li class="f-item">美妆馆</li>
+                            <li class="f-item">品优超市</li>
+                            <li class="f-item">全球购</li>
+                            <li class="f-item">闪购</li>
+                            <li class="f-item">团购</li>
+                            <li class="f-item">有趣</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!--列表-->
+<div class="sort">
+    <div class="py-container">
+        <div class="yui3-g SortList ">
+            <div class="yui3-u Left all-sort-list">
+                <div class="all-sort-list2" id="brandListDiv">
+
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="js/jquery-3.3.1.js"></script>
+<script type="text/javascript" src="js/shop/js/pages/index.js"></script>
+<script>
+    $(function () {
+        initCss();
+    })
+
+    function initCss() {
+        $('.all-sort-list2 > .item').hover(function () {
+            //父类分类列表容器的高度
+
+            $(this).addClass('hover');
+            $(this).children('.item-list').css('display', 'block');
+        }, function () {
+            $(this).removeClass('hover');
+            $(this).children('.item-list').css('display', 'none');
+        });
+
+        $('.item > .item-list > .close').click(function () {
+            $(this).parent().parent().removeClass('hover');
+            $(this).parent().hide();
+        });
+    }
+</script>
+<script>
+    $(function () {
+        initbrandList();
+    })
+
+    var v_brandArr;
+    var v_html = "";
+    function initbrandList() {
+        $.ajax({
+            type:"get",
+            url:"http://localhost:2222/brand/findBrandList",
+            /*dataType:"jsonp",*/
+            success:function (result) {
+                if (result.code==200){
+                    /*alert(result.code);*/
+                    v_brandArr=result.data;
+                    var v_brand1Arr=getChilds(0);
+                    /*alert(v_brand1Arr.length)*/
+                    for (let brand of v_brand1Arr){
+                        v_html += '<div class="item">';
+                        v_html += '<h3><a href="">'+brand.brandName+'</a></h3>';
+                        v_html += '<div class="item-list clearfix">';
+                        v_html += '<div class="subitem">';
+                       buildBrand2(brand.id);
+                        v_html += '</div></div></div>';
+                }
+                    $("#brandListDiv").html(v_html);
+                    // 初始化css效果
+                    initCss();
+
+                }
+            }
+        })
+    }
+
+    function buildBrand2(id) {
+        var brand2Arr = getChilds(id);
+        var count = 0;
+        for (let brand2 of brand2Arr) {
+            count++;
+            v_html+='<dl class="fore1'+count+'">';
+            v_html+='<dt><a href="">'+brand2.brandName+'</a></dt>';
+            v_html += '<dd>';
+            buildBrand3(brand2.id);
+            v_html += '</dd>';
+            v_html += '</dl>';
+        }
+    }
+    function buildBrand3(id) {
+        var brand3Arr = getChilds(id);
+        for (let brand3 of brand3Arr) {
+            v_html+='<em><a href="">'+brand3.brandName+'</a></em>';
+        }
+    }
+    function getChilds(id) {
+        var childs=[];
+        for (let brand of v_brandArr){
+            if (brand.pid==id){
+                childs.push(brand)
+            }
+        }
+
+        return childs;
+    }
+</script>
+</body>
+</html>

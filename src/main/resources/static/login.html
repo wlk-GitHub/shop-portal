@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>登陆</title>
+    <link href="bootstrap/css/bootstrap.min.css" rel="stylesheet" />
+    <script src="bootstrap/js/jquery-3.3.1.min.js"></script>
+    <script src="bootstrap/js/bootstrap.min.js"></script>
+
+
+    <link href="js/js/bootstrap-datetimepicker/css/bootstrap-datetimepicker.min.css" rel="stylesheet" />
+    <script src="js/js/bootstrap-datetimepicker/js/bootstrap-datetimepicker.min.js"></script>
+    <script src="js/js/bootstrap-datetimepicker/js/locales/bootstrap-datetimepicker.zh-CN.js"></script>
+
+    <script src="js/jquery.cookie.min.js"></script>
+    <script src="js/Key.js"></script>
+    <script src="js/jsencrypt.min.js"></script>
+
+    <script src="js/date-format.js"></script>
+</head>
+<body>
+<div class="row">
+    <div class="col-md-12">
+        <form class="form-horizontal">
+            <div class="form-group">
+                <label  class="col-sm-2 control-label">用户名</label>
+                <div class="col-sm-4">
+                    <input type="text" class="form-control" id="memberName" placeholder="请输入用户名...">
+                </div>
+            </div>
+            <div class="form-group">
+                <label  class="col-sm-2 control-label">密码</label>
+                <div class="col-sm-4">
+                    <input type="password" class="form-control" id="password" placeholder="请输入密码...">
+                </div>
+            </div>
+
+
+            <div class="row">
+                <div class="col-md-8" style="text-align:center">
+                    <button type="button" class="btn btn-primary" onclick="login()">
+                        <span class=""></span>&nbsp;<i class="glyphicon glyphicon-ok"></i>登陆
+                    </button>
+                    &nbsp;&nbsp;&nbsp;&nbsp;
+                    <button type="reset" class="btn btn-danger" onclick="history.go(0)">
+                        <span class=""></span>&nbsp;<i class="glyphicon glyphicon-refresh"></i>重置
+                    </button>
+                    &nbsp;&nbsp;&nbsp;&nbsp;
+                    <button type="reset" class="btn btn-danger" onclick="toReg()">
+                        <span class=""></span>&nbsp;<i class="glyphicon glyphicon-refresh"></i>注册
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+
+<script>
+    function login() {
+
+        //js验证
+
+        //结合js插件完成rsa加密
+        var encrypt = new JSEncrypt();
+        encrypt.setPublicKey(publicKey);
+        // 获取用户名密码
+        var v_memberName = encrypt.encrypt($("#memberName").val());
+        var v_password = encrypt.encrypt($("#password").val());
+
+        if(v_memberName.length<=0){
+            alert("请输入用户名")
+        }
+        $.ajax({
+            type:"post",
+            url:"http://localhost:8081/api/members/login",
+            data:{"memberName":v_memberName,"password":v_password},
+            success:function (result) {
+                if (result.code == 200) {
+                    $.cookie("wlk-token",result.data);
+                    //登陆成功后跳转页面
+                   location.href="/product.html";
+
+                } else {
+                    alert(result.msg);
+                }
+            }
+        })
+    }
+
+    function toReg() {
+        location.href="reg.html"
+    }
+</script>
+</body>
+</html>

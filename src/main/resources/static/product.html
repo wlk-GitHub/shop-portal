@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link href="bootstrap/css/bootstrap.min.css" rel="stylesheet" />
+    <script src="bootstrap/js/jquery-3.3.1.min.js"></script>
+    <script src="bootstrap/js/bootstrap.min.js"></script>
+    <link rel="stylesheet" type="text/css" href="shop/css/webbase.css" />
+    <link rel="stylesheet" type="text/css" href="shop/css/pages-JD-index.css" />
+    <link rel="stylesheet" type="text/css" href="shop/css/widget-jquery.autocomplete.css" />
+    <link rel="stylesheet" type="text/css" href="shop/css/widget-cartPanelView.css" />
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+<body>
+
+<nav class="navbar navbar-default">
+    <div class="container-fluid">
+        <!-- Brand and toggle get grouped for better mobile display -->
+        <div class="navbar-header">
+            <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1" aria-expanded="false">
+                <span class="sr-only">Toggle navigation</span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+            </button>
+            <a class="navbar-brand" href="#">飞狐购物商城</a>
+        </div>
+
+        <!-- Collect the nav links, forms, and other content for toggling -->
+        <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+            <ul class="nav navbar-nav navbar-right">
+                <li id="loginDiv"><a href="/login.html">登录</a></li>
+                <li id="logoutDiv"><a href="/reg.html">注册</a></li>
+                <li><a href="/cart.html">购物车<span id="cartCount" style="color: red">(0)</span></a></li>
+            </ul>
+        </div><!-- /.navbar-collapse -->
+    </div><!-- /.container-fluid -->
+</nav>
+
+    <div id="nav-bottom">
+        <!--顶部-->
+        <div class="nav-top">
+            <!--头部-->
+            <div class="header">
+                <div class="py-container">
+                    <div class="yui3-g NavList">
+                        <div class="yui3-u Left all-sort">
+                            <h4>全部商品分类</h4>
+                        </div>
+                        <div class="yui3-u Center navArea">
+                            <ul class="nav">
+                                <li class="f-item">服装城</li>
+                                <li class="f-item">美妆馆</li>
+                                <li class="f-item">品优超市</li>
+                                <li class="f-item">全球购</li>
+                                <li class="f-item">闪购</li>
+                                <li class="f-item">团购</li>
+                                <li class="f-item">有趣</li>
+                            </ul>
+                        </div>
+
+
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="sort">
+        <div class="py-container">
+            <div class="yui3-g SortList ">
+                <div class="yui3-u Left all-sort-list">
+                    <div class="all-sort-list2">
+
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <div class="row">
+        <div class="col-md-12">
+            <div class="panel panel-success">
+                <div class="panel-heading">热销品牌</div>
+                <div class="panel-body" id="hotListDiv">
+
+
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+
+
+
+<textarea id="productDiv" style="display: none;">
+    <div class="col-sm-6 col-md-4">
+        <div class="thumbnail">
+            <img src="##mainImage##" width="200px" height="200px">
+            <div class="caption">
+                <h3>商品名：##productName##</h3>
+                <p style="color: red;font-size: 20px"><b>价格：￥##price##</b></p>
+                <p><a class="btn btn-primary" role="button" href="javascript:" onclick="purchase('##cartId##')">购买</a>
+                    <a href="#" class="btn btn-info" role="button" href="javascript:" onclick="joinCart('###cartId##')" >加入购物车</a></p>
+            </div>
+        </div>
+    </div>
+</textarea>
+
+
+
+
+
+
+
+
+<div id="brandDiv" style="display: none;">
+    <div class="col-md-4">
+        <div class="thumbnail">
+            <img src="##image##" width="50px" height="80px">
+            <div class="caption">
+                <h3>品牌名:##brandName##</h3>
+            </div>
+        </div>
+    </div>
+</div>
+<!--<div id="productTemplateDiv" style="display: none">
+    <div class="col-md-2 product-info">
+        <div class="product-container">
+            <img src="#productImage#" class="product-image"/>
+            <p class="product-name">#productName#</p>
+            <div class="product-price">
+                <i>￥</i>
+                <span>#productPrice#</span>
+            </div>
+            <div class="product-operation">
+                <button type="button" onclick="addCartItem('#productId#')" class="btn btn-primary btn-xs">
+                    <span class="glyphicon glyphicon-shopping-cart"></span>
+                    加入购物车
+                </button>
+                <button class="btn btn-primary btn-xs">立即购买</button>
+            </div>
+        </div>
+    </div>
+</div>-->
+
+<script src="js/jquery.cookie.min.js"></script>
+
+<script>
+    $(function () {
+        initFindNum();
+        initMember();
+        initHotProducts();
+        initCategory()
+    })
+
+
+
+   //查找购物车商品数量
+    function initFindNum() {
+        var wlkToken = $.cookie("wlk-token");
+        if (wlkToken) {
+            $.ajax({
+                type: "get",
+                url: "http://localhost:8081/api/cart/findNum",
+                beforeSend: function (xhr) {
+                    // 在发送请求之前执行 beforeSend中的代码，所以可以在这里面设置头信息
+                    xhr.setRequestHeader("x-auth", wlkToken);
+                },
+                success: function (result) {
+                    console.log(result);
+                    if (result.code == 200) {
+                        $("#cartCount").html("("+result.data+")");
+                    }
+                }
+            })
+        }
+    }
+
+
+
+   /* function cart() {
+        var wlkToken = $.cookie("wlk-token");
+        if (wlkToken) {
+            location.href="/cart.html";
+        } else {
+            alert("请登录！");
+            location.href="/login.html";
+        }
+    }*/
+
+
+    function purchase(id) {
+        var wlkToken = $.cookie("wlk-token");
+        if (wlkToken) {
+            $.ajax({
+                type:"post",
+                url:"http://localhost:8081/api/cart/addItem",
+                data:{"goodsId":id,"num":1},
+                beforeSend:function(xhr) {
+                    // 在发送请求之前执行 beforeSend中的代码，所以可以在这里面设置头信息
+                    xhr.setRequestHeader("x-auth", wlkToken);
+                },
+                success:function (result) {
+                    if (result.code == 200) {
+                        //initFindNum();
+                        location.href="/cart.html";
+                    }else {
+                        result.data=null;
+                        alert("请登录后购买商品")
+                        location.href="/login.html"
+                    }
+                }
+            })
+        }
+    }
+
+
+
+
+
+
+
+    function logout() {
+        var wlkToken = $.cookie("wlk-token");
+        if(wlkToken){
+            $.ajax({
+                type:"get",
+                url:"http://localhost:8081/api/members/logout",
+                beforeSend:function(xhr){
+                    xhr.setRequestHeader("x-auth",wlkToken);
+                },
+                success:function (result) {
+                    if(result.code==200){
+                        //删除客户端的cookie
+                        $.removeCookie("wlkToken");
+                        //刷新页面
+                        location.href="/product.html";
+                    }
+                }
+
+            })
+        }
+
+    }
+
+
+    function initMember() {
+        var wlkToken = $.cookie("wlk-token");
+        if(wlkToken){
+            $.ajax({
+                type:"get",
+                url:"http://localhost:8081/api/members/findMember",
+                beforeSend:function(xhr){
+                    xhr.setRequestHeader("x-auth",wlkToken);
+                },
+                success:function (result) {
+                    if(result.code==200){
+                        var realName = result.data.realName;
+                        $("#loginDiv").html("<a href='#'>当前用户："+realName+"</a>");
+                        $("#logoutDiv").html("<a href='#' onclick='logout()'>退出</a>")
+                    }
+                }
+            })
+        }
+
+    }
+
+    function initHotProducts() {
+            $.ajax({
+                    type: "get",
+                    url: "http://localhost:8081/api/products/findHotList",
+                    success: function (result) {
+                        var v_productArr = result.data
+                        var v_productHtml = $("#productDiv").val();
+                        for (let product of v_productArr){
+                            var res=   v_productHtml.replace(/##productName##/g,product.productName)
+                                .replace(/##cartId##/g, product.id)
+                                .replace(/##price##/g,product.price).replace(/##mainImage##/g,product.mainImagePath)
+
+                            $("#hotListDiv").append(res)
+                        }
+
+                    }
+                }
+            )
+    }
+
+
+    function initCategory() {
+        //发起一个AJAX请求调用查询所有商品分类的接口
+        $.ajax({
+            url: "http://localhost:8081/api/category/",
+            type: "get",
+            dataType: "json",
+            success: function (result) {
+                if (result.code == 200) {
+                    initCategory1(result.data, 1);
+                    initCss();
+                }
+            }
+        });
+    }
+
+    function initCategory1(categoryList,pid){
+
+        var categoryHTML = "";
+        for(var i = 0 ; i < categoryList.length ; i ++){
+            if(categoryList[i].pid == pid){
+                categoryHTML += '<div class="item">';
+                categoryHTML += '<h3><a href="">' + categoryList[i].categoryName + '</a></h3>';
+                categoryHTML += initCategory2(categoryList,categoryList[i].id);
+                categoryHTML += '</div>';
+            }
+
+        }
+        $(".all-sort-list2").html(categoryHTML);
+    }
+
+    function initCategory2(categoryList,pid){
+        var categoryHTML = "";
+        categoryHTML += '<div class="item-list clearfix">';
+        categoryHTML += '<div class="subitem">';
+        for(var i = 0 ; i < categoryList.length ; i ++){
+            if(categoryList[i].pid == pid){
+                categoryHTML += '<dl class="fore1">';
+                categoryHTML += '<dt><a href="">' + categoryList[i].categoryName + '</a></dt>';
+                categoryHTML += initCategory3(categoryList,categoryList[i].id);
+                categoryHTML += '</dl>';
+            }
+        }
+        categoryHTML += '</div></div>';
+        return categoryHTML;
+    }
+
+    function initCategory3(categoryList,pid){
+        var categoryHTML = "<dd>";
+        for(var i = 0 ; i < categoryList.length ; i ++){
+            if(categoryList[i].pid == pid){
+                categoryHTML += '<em><a href="">' + categoryList[i].categoryName + '</a></em>';
+            }
+        }
+        categoryHTML += '</dd>';
+        return categoryHTML;
+    }
+
+    function initCss() {
+        $('.all-sort-list2 > .item').hover(function() {
+            //父类分类列表容器的高度
+            $(this).addClass('hover');
+            $(this).children('.item-list').css('display', 'block');
+        }, function() {
+            $(this).removeClass('hover');
+            $(this).children('.item-list').css('display', 'none');
+        });
+
+        $('.item > .item-list > .close').click(function() {
+            $(this).parent().parent().removeClass('hover');
+            $(this).parent().hide();
+        });
+    }
+
+
+</script>
+</body>
+</html>

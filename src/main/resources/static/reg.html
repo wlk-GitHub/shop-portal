@@ -1,0 +1,239 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title></title>
+
+    <link href="bootstrap/css/bootstrap.min.css" rel="stylesheet" />
+    <script src="bootstrap/js/jquery-3.3.1.min.js"></script>
+    <script src="bootstrap/js/bootstrap.min.js"></script>
+
+
+    <link href="js/js/bootstrap-datetimepicker/css/bootstrap-datetimepicker.min.css" rel="stylesheet" />
+    <script src="js/js/bootstrap-datetimepicker/js/bootstrap-datetimepicker.min.js"></script>
+    <script src="js/js/bootstrap-datetimepicker/js/locales/bootstrap-datetimepicker.zh-CN.js"></script>
+
+    <script src="js/date-format.js"></script>
+</head>
+<body>
+
+<div class="container">
+    <div class="row">
+        <div class="col-md-12">
+            <form class="form-horizontal">
+                <div class="form-group">
+                    <label class="col-sm-4 control-label">用户名称</label>
+                    <div class="col-sm-4">
+                        <input type="text" class="form-control" id="memberName" placeholder="请输入用户名称..." onblur="validateMemberName(this.value)">
+                        <span id="nameTip" style="color: red"></span>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label  class="col-sm-4 control-label">用户密码</label>
+                    <div class="col-sm-4">
+                        <input type="text" class="form-control" id="password" placeholder="请输入用户密码...">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label  class="col-sm-4 control-label">真实姓名</label>
+                    <div class="col-sm-4">
+                        <input type="text" class="form-control" id="realName" placeholder="请输入真实姓名...">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label  class="col-sm-4 control-label">出生日期</label>
+                    <div class="col-sm-4">
+                        <input type="date" class="form-control" id="birthday" placeholder="请输入出生日期...">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label  class="col-sm-4 control-label">用户邮箱</label>
+                    <div class="col-sm-4">
+                        <input type="text" class="form-control" id="mail" placeholder="请输入用户邮箱..." onblur="validateMail(this.value)">
+                        <span id="mailTip" style="color:red "></span>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label  class="col-sm-4 control-label">手机号码</label>
+                    <div class="col-sm-4">
+                        <input type="text" class="form-control" id="phone" placeholder="请输入手机号码..." onblur="validatePhone(this.value)">
+                        <span id="phoneTip" style="color:red "></span>
+                    </div>
+                </div>
+
+                <div class="form-group" id="areaDiv">
+                    <label class="col-sm-4 control-label">地区</label>
+                </div>
+
+
+
+
+
+
+                <div style="text-align: center">
+                    <button type="button" class="btn btn-primary" onclick="register()" id="regButton"><i class="glyphicon glyphicon-ok"></i>注册</button>
+                    <button type="reset" class="btn btn-default"><i class="glyphicon glyphicon-refresh"></i>重置</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+
+</body>
+</html>
+<script>
+
+    $(function () {
+        initArea(0);
+    })
+
+    function initArea(id,obj) {
+        if(obj){
+            $(obj).parent().nextAll().remove();
+        }
+        $.ajax({
+            type:"get",
+            url:"http://localhost:8081/areas",
+            data:{"id":id},
+            success:function (result) {
+                if(result.code==200){
+                    var v_areaArr = result.data;
+
+                    if(v_areaArr.length>0){
+                        var v_areaHtml = '<div class="col-sm-2">\n' +
+                            '                        <select class="form-control" onchange="initArea(this.value,this)" name="areaSelect"><option value="-1">===请选择===</option>';
+                        for (let area of v_areaArr){
+                            v_areaHtml+='<option value="'+area.id+'" data-area-name="'+area.areaName+'">'+area.areaName+'</option>';
+                        }
+                        v_areaHtml+='</select></div>';
+                        $("#areaDiv").append(v_areaHtml);
+                    }
+
+                }
+            }
+        })
+    }
+
+
+
+
+    function validateMemberName(memberName) {
+       if(memberName==""){
+        alert("请输入会员名");
+        return;
+       }
+       $.ajax({
+           type:"get",
+           url:"http://localhost:8081/members/validateMemberName",
+           data:{"memberName":memberName},
+           success:function (result) {
+               if(result.code!=200){
+                   $("#nameTip").html("<b>会员名已存在</b>");
+                   $("#regButton").attr("disabled","disabled");
+
+               }else{
+                   $("#nameTip").html("");
+                   $("#regButton").removeAttr("disabled");
+               }
+           }
+       })
+    }
+
+    function validatePhone(phone) {
+        if(phone==""){
+            alert("请输入手机号");
+            return;
+        }
+
+        $.ajax({
+            type:"get",
+            url:"http://localhost:8081/members/validatePhone",
+            data:{"phone":phone},
+            success:function (result) {
+              if(result.code!=200){
+                  $("#phoneTip").html("<b>手机号已存在</b>");
+                  $("#regButton").attr("disabled","disabled");
+              }else {
+                  $("#phoneTip").html("");
+                  $("#regButton").removeAttr("disabled");
+              }
+            }
+        })
+    }
+
+    function validateMail(mail) {
+        if(mail==""){
+            alert("请输入邮箱号");
+            return;
+        }
+        $.ajax({
+            type:"get",
+            url:"http://localhost:8081/members/validateMail",
+            data:{"mail":mail},
+            success:function (result) {
+                if(result.code!=200){
+                  $("#mailTip").html("<b>您输入的邮箱号已存在</b>");
+                  $("#regButton").attr("disabled","disabled");
+                }else{
+                    $("#mailTip").html("");
+                    $("#regButton").removeAttr("disabled");
+                }
+            }
+        })
+    }
+
+    function register() {
+        var password =$("#password").val();
+        var memberName =$("#memberName").val();
+        var realName =$("#realName").val();
+        var birthday =$("#birthday").val();
+        var mail =$("#mail").val();
+        var phone =$("#phone").val();
+        var member={};
+        member.password=password;
+        member.memberName=memberName;
+        member.realName=realName;
+        member.birthday=birthday;
+        member.mail=mail;
+        member.phone=phone;
+
+
+        var shengId = $($("select[name='areaSelect']")[0]).val();
+        var shiId = $($("select[name='areaSelect']")[1]).val();
+        var xianId = $($("select[name='areaSelect']")[2]).val();
+        var shengName = $($("select[name='areaSelect']")[0]).find("option:selected").data("area-name");
+        var shiName = $($("select[name='areaSelect']")[1]).find("option:selected").data("area-name");
+        var xianName = $($("select[name='areaSelect']")[2]).find("option:selected").data("area-name");
+
+        member.shengId=shengId;
+        member.shiId=shiId;
+        member.xianId=xianId;
+        member.areaName=shengName+"->"+shiName+"->"+xianName;
+
+
+
+
+
+        $.ajax({
+            url:"http://localhost:8081/members",
+            type:"post",
+            data:member,
+            dataType:"json",
+            success:function(result){
+                if(result.code==200){
+                    regiestMember=true;
+                    alert("恭喜,会员注冊成功！")
+                }else{
+	                alert("注册失败"+result.msg);
+	                }
+             },
+
+        })
+    }
+
+
+
+
+</script>

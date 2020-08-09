@@ -1,0 +1,1454 @@
+/*!
+ * bootstrap-fileinput v5.0.7
+ * http://plugins.krajee.com/file-input
+ *
+ * Author: Kartik Visweswaran
+ * Copyright: 2014 - 2019, Kartik Visweswaran, Krajee.com
+ *
+ * Licensed under the BSD-3-Clause
+ * https://github.com/kartik-v/bootstrap-fileinput/blob/master/LICENSE.md
+ */
+(function (factory) {
+    'use strict';
+    //noinspection JSUnresolvedVariable
+    if (typeof define === 'function' && define.amd) { // jshint ignore:line
+        // AMD. Register as an anonymous module.
+        define(['jquery'], factory); // jshint ignore:line
+    } else { // noinspection JSUnresolvedVariable
+        if (typeof module === 'object' && module.exports) { // jshint ignore:line
+            // Node/CommonJS
+            // noinspection JSUnresolvedVariable
+            module.exports = factory(require('jquery')); // jshint ignore:line
+        } else {
+            // Browser globals
+            factory(window.jQuery);
+        }
+    }
+}(function ($) {
+    'use strict';
+
+    $.fn.fileinputLocales = {};
+    $.fn.fileinputThemes = {};
+
+    String.prototype.setTokens = function (replacePairs) {
+        var str = this.toString(), key, re;
+        for (key in replacePairs) {
+            if (replacePairs.hasOwnProperty(key)) {
+                re = new RegExp('\{' + key + '\}', 'g');
+                str = str.replace(re, replacePairs[key]);
+            }
+        }
+        return str;
+    };
+
+    var $h, FileInput;
+
+    // fileinput helper object for all global variables and internal helper methods
+    //noinspection JSUnresolvedVariable
+    $h = {
+        FRAMES: '.kv-preview-thumb',
+        SORT_CSS: 'file-sortable',
+        INIT_FLAG: 'init-',
+        OBJECT_PARAMS: '<param name="controller" value="true" />\n' +
+            '<param name="allowFullScreen" value="true" />\n' +
+            '<param name="allowScriptAccess" value="always" />\n' +
+            '<param name="autoPlay" value="false" />\n' +
+            '<param name="autoStart" value="false" />\n' +
+            '<param name="quality" value="high" />\n',
+        DEFAULT_PREVIEW: '<div class="file-preview-other">\n' +
+            '<span class="{previewFileIconClass}">{previewFileIcon}</span>\n' +
+            '</div>',
+        MODAL_ID: 'kvFileinputModal',
+        MODAL_EVENTS: ['show', 'shown', 'hide', 'hidden', 'loaded'],
+        logMessages: {
+            ajaxError: '{status}: {error}. Error Details: {text}.',
+            badDroppedFiles: 'Error scanning dropped files!',
+            badExifParser: 'Error loading the piexif.js library. {details}',
+            badInputType: 'The input "type" must be set to "file" for initializing the "bootstrap-fileinput" plugin.',
+            exifWarning: 'To avoid this warning, either set "autoOrientImage" to "false" OR ensure you have loaded ' +
+                'the "piexif.js" library correctly on your page before the "fileinput.js" script.',
+            invalidChunkSize: 'Invalid upload chunk size: "{chunkSize}". Resumable uploads are disabled.',
+            invalidThumb: 'Invalid thumb frame with id: "{id}".',
+            noResumableSupport: 'The browser does not support resumable or chunk uploads.',
+            noUploadUrl: 'The "uploadUrl" is not set. Ajax uploads and resumable uploads have been disabled.',
+            retryStatus: 'Retrying upload for chunk # {chunk} for {filename}... retry # {retry}.'
+        },
+        objUrl: window.URL || window.webkitURL,
+        now: function () {
+            return new Date();
+        },
+        round: function (num) {
+            num = parseFloat(num);
+            return isNaN(num) ? 0 : Math.floor(Math.round(num));
+        },
+        getFileRelativePath: function (file) {
+            /** @namespace file.relativePath */
+            /** @namespace file.webkitRelativePath */
+            return String(file.relativePath || file.webkitRelativePath || $h.getFileName(file) || null);
+
+        },
+        getFileId: function (file, generateFileId) {
+            var relativePath = $h.getFileRelativePath(file);
+            if (typeof generateFileId === 'function') {
+                return generateFileId(file);
+            }
+            if (!file) {
+                return null;
+            }
+            if (!relativePath) {
+                return null;
+            }
+            return (file.size + '_' + relativePath.replace(/\s/img, '_'));
+        },
+        getFrameSelector: function (id, selector) {
+            selector = selector || '';
+            return '[id="' + id + '"]' + selector;
+        },
+        getZoomSelector: function (id, selector) {
+            selector = selector || '';
+            return '[id="zoom-' + id + '"]' + selector;
+        },
+        getFrameElement: function ($element, id, selector) {
+            return $element.find($h.getFrameSelector(id, selector));
+        },
+        getZoomElement: function ($element, id, selector) {
+            return $element.find($h.getZoomSelector(id, selector));
+        },
+        getElapsed: function (seconds) {
+            var delta = seconds, out = '', result = {}, structure = {
+                year: 31536000,
+                month: 2592000,
+                week: 604800, // uncomment row to ignore
+                day: 86400,   // feel free to add your own row
+                hour: 3600,
+                minute: 60,
+                second: 1
+            };
+            Object.keys(structure).forEach(function (key) {
+                result[key] = Math.floor(delta / structure[key]);
+                delta -= result[key] * structure[key];
+            });
+            $.each(result, function (key, value) {
+                if (value > 0) {
+                    out += (out ? ' ' : '') + value + key.substring(0, 1);
+                }
+            });
+            return out;
+        },
+        debounce: function (func, delay) {
+            var inDebounce;
+            return function () {
+                var args = arguments, context = this;
+                clearTimeout(inDebounce);
+                inDebounce = setTimeout(function () {
+                    func.apply(context, args);
+                }, delay);
+            };
+        },
+        stopEvent: function (e) {
+            e.stopPropagation();
+            e.preventDefault();
+        },
+        getFileName: function (file) {
+            /** @namespace file.fileName */
+            return file ? (file.fileName || file.name || '') : ''; // some confusion in different versions of Firefox
+        },
+        createObjectURL: function (data) {
+            if ($h.objUrl && $h.objUrl.createObjectURL && data) {
+                return $h.objUrl.createObjectURL(data);
+            }
+            return '';
+        },
+        revokeObjectURL: function (data) {
+            if ($h.objUrl && $h.objUrl.revokeObjectURL && data) {
+                $h.objUrl.revokeObjectURL(data);
+            }
+        },
+        compare: function (input, str, exact) {
+            return input !== undefined && (exact ? input === str : input.match(str));
+        },
+        isIE: function (ver) {
+            var div, status;
+            // check for IE versions < 11
+            if (navigator.appName !== 'Microsoft Internet Explorer') {
+                return false;
+            }
+            if (ver === 10) {
+                return new RegExp('msie\\s' + ver, 'i').test(navigator.userAgent);
+            }
+            div = document.createElement('div');
+            div.innerHTML = '<!--[if IE ' + ver + ']> <i></i> <![endif]-->';
+            status = div.getElementsByTagName('i').length;
+            document.body.appendChild(div);
+            div.parentNode.removeChild(div);
+            return status;
+        },
+        canAssignFilesToInput: function () {
+            var input = document.createElement('input');
+            try {
+                input.type = 'file';
+                input.files = null;
+                return true;
+            } catch (err) {
+                return false;
+            }
+        },
+        getDragDropFolders: function (items) {
+            var i, item, len = items ? items.length : 0, folders = 0;
+            if (len > 0 && items[0].webkitGetAsEntry()) {
+                for (i = 0; i < len; i++) {
+                    item = items[i].webkitGetAsEntry();
+                    if (item && item.isDirectory) {
+                        folders++;
+                    }
+                }
+            }
+            return folders;
+        },
+        initModal: function ($modal) {
+            var $body = $('body');
+            if ($body.length) {
+                $modal.appendTo($body);
+            }
+        },
+        isEmpty: function (value, trim) {
+            return value === undefined || value === null || value.length === 0 || (trim && $.trim(value) === '');
+        },
+        isArray: function (a) {
+            return Array.isArray(a) || Object.prototype.toString.call(a) === '[object Array]';
+        },
+        ifSet: function (needle, haystack, def) {
+            def = def || '';
+            return (haystack && typeof haystack === 'object' && needle in haystack) ? haystack[needle] : def;
+        },
+        cleanArray: function (arr) {
+            if (!(arr instanceof Array)) {
+                arr = [];
+            }
+            return arr.filter(function (e) {
+                return (e !== undefined && e !== null);
+            });
+        },
+        spliceArray: function (arr, index, reverseOrder) {
+            var i, j = 0, out = [], newArr;
+            if (!(arr instanceof Array)) {
+                return [];
+            }
+            newArr = $.extend(true, [], arr);
+            if (reverseOrder) {
+                newArr.reverse();
+            }
+            for (i = 0; i < newArr.length; i++) {
+                if (i !== index) {
+                    out[j] = newArr[i];
+                    j++;
+                }
+            }
+            if (reverseOrder) {
+                out.reverse();
+            }
+            return out;
+        },
+        getNum: function (num, def) {
+            def = def || 0;
+            if (typeof num === 'number') {
+                return num;
+            }
+            if (typeof num === 'string') {
+                num = parseFloat(num);
+            }
+            return isNaN(num) ? def : num;
+        },
+        hasFileAPISupport: function () {
+            return !!(window.File && window.FileReader);
+        },
+        hasDragDropSupport: function () {
+            var div = document.createElement('div');
+            /** @namespace div.draggable */
+            /** @namespace div.ondragstart */
+            /** @namespace div.ondrop */
+            return !$h.isIE(9) &&
+                (div.draggable !== undefined || (div.ondragstart !== undefined && div.ondrop !== undefined));
+        },
+        hasFileUploadSupport: function () {
+            return $h.hasFileAPISupport() && window.FormData;
+        },
+        hasBlobSupport: function () {
+            try {
+                return !!window.Blob && Boolean(new Blob());
+            } catch (e) {
+                return false;
+            }
+        },
+        hasArrayBufferViewSupport: function () {
+            try {
+                return new Blob([new Uint8Array(100)]).size === 100;
+            } catch (e) {
+                return false;
+            }
+        },
+        hasResumableUploadSupport: function () {
+            /** @namespace Blob.prototype.webkitSlice */
+            /** @namespace Blob.prototype.mozSlice */
+            return $h.hasFileUploadSupport() && $h.hasBlobSupport() && $h.hasArrayBufferViewSupport() &&
+                (!!Blob.prototype.webkitSlice || !!Blob.prototype.mozSlice || !!Blob.prototype.slice || false);
+        },
+        dataURI2Blob: function (dataURI) {
+            //noinspection JSUnresolvedVariable
+            var BlobBuilder = window.BlobBuilder || window.WebKitBlobBuilder || window.MozBlobBuilder ||
+                window.MSBlobBuilder, canBlob = $h.hasBlobSupport(), byteStr, arrayBuffer, intArray, i, mimeStr, bb,
+                canProceed = (canBlob || BlobBuilder) && window.atob && window.ArrayBuffer && window.Uint8Array;
+            if (!canProceed) {
+                return null;
+            }
+            if (dataURI.split(',')[0].indexOf('base64') >= 0) {
+                byteStr = atob(dataURI.split(',')[1]);
+            } else {
+                byteStr = decodeURIComponent(dataURI.split(',')[1]);
+            }
+            arrayBuffer = new ArrayBuffer(byteStr.length);
+            intArray = new Uint8Array(arrayBuffer);
+            for (i = 0; i < byteStr.length; i += 1) {
+                intArray[i] = byteStr.charCodeAt(i);
+            }
+            mimeStr = dataURI.split(',')[0].split(':')[1].split(';')[0];
+            if (canBlob) {
+                return new Blob([$h.hasArrayBufferViewSupport() ? intArray : arrayBuffer], {type: mimeStr});
+            }
+            bb = new BlobBuilder();
+            bb.append(arrayBuffer);
+            return bb.getBlob(mimeStr);
+        },
+        arrayBuffer2String: function (buffer) {
+            //noinspection JSUnresolvedVariable
+            if (window.TextDecoder) {
+                // noinspection JSUnresolvedFunction
+                return new TextDecoder('utf-8').decode(buffer);
+            }
+            var array = Array.prototype.slice.apply(new Uint8Array(buffer)), out = '', i = 0, len, c, char2, char3;
+            len = array.length;
+            while (i < len) {
+                c = array[i++];
+                switch (c >> 4) { // jshint ignore:line
+                    case 0:
+                    case 1:
+                    case 2:
+                    case 3:
+                    case 4:
+                    case 5:
+                    case 6:
+                    case 7:
+                        // 0xxxxxxx
+                        out += String.fromCharCode(c);
+                        break;
+                    case 12:
+                    case 13:
+                        // 110x xxxx   10xx xxxx
+                        char2 = array[i++];
+                        out += String.fromCharCode(((c & 0x1F) << 6) | (char2 & 0x3F)); // jshint ignore:line
+                        break;
+                    case 14:
+                        // 1110 xxxx  10xx xxxx  10xx xxxx
+                        char2 = array[i++];
+                        char3 = array[i++];
+                        out += String.fromCharCode(((c & 0x0F) << 12) | // jshint ignore:line
+                            ((char2 & 0x3F) << 6) |  // jshint ignore:line
+                            ((char3 & 0x3F) << 0)); // jshint ignore:line
+                        break;
+                }
+            }
+            return out;
+        },
+        isHtml: function (str) {
+            var a = document.createElement('div');
+            a.innerHTML = str;
+            for (var c = a.childNodes, i = c.length; i--;) {
+                if (c[i].nodeType === 1) {
+                    return true;
+                }
+            }
+            return false;
+        },
+        isSvg: function (str) {
+            return str.match(/^\s*<\?xml/i) && (str.match(/<!DOCTYPE svg/i) || str.match(/<svg/i));
+        },
+        getMimeType: function (signature, contents, type) {
+            switch (signature) {
+                case 'ffd8ffe0':
+                case 'ffd8ffe1':
+                case 'ffd8ffe2':
+                    return 'image/jpeg';
+                case '89504E47':
+                    return 'image/png';
+                case '47494638':
+                    return 'image/gif';
+                case '49492a00':
+                    return 'image/tiff';
+                case '52494646':
+                    return 'image/webp';
+                case '66747970':
+                    return 'video/3gp';
+                case '4f676753':
+                    return 'video/ogg';
+                case '1a45dfa3':
+                    return 'video/mkv';
+                case '000001ba':
+                case '000001b3':
+                    return 'video/mpeg';
+                case '3026b275':
+                    return 'video/wmv';
+                case '25504446':
+                    return 'application/pdf';
+                case '25215053':
+                    return 'application/ps';
+                case '504b0304':
+                case '504b0506':
+                case '504b0508':
+                    return 'application/zip';
+                case '377abcaf':
+                    return 'application/7z';
+                case '75737461':
+                    return 'application/tar';
+                case '7801730d':
+                    return 'application/dmg';
+                default:
+                    switch (signature.substring(0, 6)) {
+                        case '435753':
+                            return 'application/x-shockwave-flash';
+                        case '494433':
+                            return 'audio/mp3';
+                        case '425a68':
+                            return 'application/bzip';
+                        default:
+                            switch (signature.substring(0, 4)) {
+                                case '424d':
+                                    return 'image/bmp';
+                                case 'fffb':
+                                    return 'audio/mp3';
+                                case '4d5a':
+                                    return 'application/exe';
+                                case '1f9d':
+                                case '1fa0':
+                                    return 'application/zip';
+                                case '1f8b':
+                                    return 'application/gzip';
+                                default:
+                                    return contents && !contents.match(
+                                        /[^\u0000-\u007f]/) ? 'application/text-plain' : type;
+                            }
+                    }
+            }
+        },
+        addCss: function ($el, css) {
+            $el.removeClass(css).addClass(css);
+        },
+        getElement: function (options, param, value) {
+            return ($h.isEmpty(options) || $h.isEmpty(options[param])) ? value : $(options[param]);
+        },
+        uniqId: function () {
+            return Math.round(new Date().getTime()) + '_' + Math.round(Math.random() * 100);
+        },
+        htmlEncode: function (str, undefVal) {
+            if (str === undefined) {
+                return undefVal || null;
+            }
+            return str.replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&apos;');
+        },
+        replaceTags: function (str, tags) {
+            var out = str;
+            if (!tags) {
+                return out;
+            }
+            $.each(tags, function (key, value) {
+                if (typeof value === 'function') {
+                    value = value();
+                }
+                out = out.split(key).join(value);
+            });
+            return out;
+        },
+        cleanMemory: function ($thumb) {
+            var data = $thumb.is('img') ? $thumb.attr('src') : $thumb.find('source').attr('src');
+            $h.revokeObjectURL(data);
+        },
+        findFileName: function (filePath) {
+            var sepIndex = filePath.lastIndexOf('/');
+            if (sepIndex === -1) {
+                sepIndex = filePath.lastIndexOf('\\');
+            }
+            return filePath.split(filePath.substring(sepIndex, sepIndex + 1)).pop();
+        },
+        checkFullScreen: function () {
+            //noinspection JSUnresolvedVariable
+            return document.fullscreenElement || document.mozFullScreenElement || document.webkitFullscreenElement ||
+                document.msFullscreenElement;
+        },
+        toggleFullScreen: function (maximize) {
+            var doc = document, de = doc.documentElement;
+            if (de && maximize && !$h.checkFullScreen()) {
+                /** @namespace document.requestFullscreen */
+                /** @namespace document.msRequestFullscreen */
+                /** @namespace document.mozRequestFullScreen */
+                /** @namespace document.webkitRequestFullscreen */
+                /** @namespace Element.ALLOW_KEYBOARD_INPUT */
+                if (de.requestFullscreen) {
+                    de.requestFullscreen();
+                } else {
+                    if (de.msRequestFullscreen) {
+                        de.msRequestFullscreen();
+                    } else {
+                        if (de.mozRequestFullScreen) {
+                            de.mozRequestFullScreen();
+                        } else {
+                            if (de.webkitRequestFullscreen) {
+                                de.webkitRequestFullscreen(Element.ALLOW_KEYBOARD_INPUT);
+                            }
+                        }
+                    }
+                }
+            } else {
+                /** @namespace document.exitFullscreen */
+                /** @namespace document.msExitFullscreen */
+                /** @namespace document.mozCancelFullScreen */
+                /** @namespace document.webkitExitFullscreen */
+                if (doc.exitFullscreen) {
+                    doc.exitFullscreen();
+                } else {
+                    if (doc.msExitFullscreen) {
+                        doc.msExitFullscreen();
+                    } else {
+                        if (doc.mozCancelFullScreen) {
+                            doc.mozCancelFullScreen();
+                        } else {
+                            if (doc.webkitExitFullscreen) {
+                                doc.webkitExitFullscreen();
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        moveArray: function (arr, oldIndex, newIndex, reverseOrder) {
+            var newArr = $.extend(true, [], arr);
+            if (reverseOrder) {
+                newArr.reverse();
+            }
+            if (newIndex >= newArr.length) {
+                var k = newIndex - newArr.length;
+                while ((k--) + 1) {
+                    newArr.push(undefined);
+                }
+            }
+            newArr.splice(newIndex, 0, newArr.splice(oldIndex, 1)[0]);
+            if (reverseOrder) {
+                newArr.reverse();
+            }
+            return newArr;
+        },
+        cleanZoomCache: function ($el) {
+            var $cache = $el.closest('.kv-zoom-cache-theme');
+            if (!$cache.length) {
+                $cache = $el.closest('.kv-zoom-cache');
+            }
+            $cache.remove();
+        },
+        closeButton: function (css) {
+            css = css ? 'close ' + css : 'close';
+            return '<button type="button" class="' + css + '" aria-label="Close">\n' +
+                '  <span aria-hidden="true">&times;</span>\n' +
+                '</button>';
+        },
+        getRotation: function (value) {
+            switch (value) {
+                case 2:
+                    return 'rotateY(180deg)';
+                case 3:
+                    return 'rotate(180deg)';
+                case 4:
+                    return 'rotate(180deg) rotateY(180deg)';
+                case 5:
+                    return 'rotate(270deg) rotateY(180deg)';
+                case 6:
+                    return 'rotate(90deg)';
+                case 7:
+                    return 'rotate(90deg) rotateY(180deg)';
+                case 8:
+                    return 'rotate(270deg)';
+                default:
+                    return '';
+            }
+        },
+        setTransform: function (el, val) {
+            if (!el) {
+                return;
+            }
+            el.style.transform = val;
+            el.style.webkitTransform = val;
+            el.style['-moz-transform'] = val;
+            el.style['-ms-transform'] = val;
+            el.style['-o-transform'] = val;
+        }
+    };
+    FileInput = function (element, options) {
+        var self = this;
+        self.$element = $(element);
+        self.$parent = self.$element.parent();
+        if (!self._validate()) {
+            return;
+        }
+        self.isPreviewable = $h.hasFileAPISupport();
+        self.isIE9 = $h.isIE(9);
+        self.isIE10 = $h.isIE(10);
+        if (self.isPreviewable || self.isIE9) {
+            self._init(options);
+            self._listen();
+        }
+        self.$element.removeClass('file-loading');
+    };
+    //noinspection JSUnusedGlobalSymbols
+    FileInput.prototype = {
+        constructor: FileInput,
+        _cleanup: function () {
+            var self = this;
+            self.reader = null;
+            self.clearFileStack();
+            self.fileBatchCompleted = true;
+            self.isError = false;
+            self.cancelling = false;
+            self.paused = false;
+            self.lastProgress = 0;
+            self._initAjax();
+        },
+        _initAjax: function () {
+            var self = this;
+            self.ajaxQueue = [];
+            self.ajaxRequests = [];
+            self.ajaxQueueIntervalId = null;
+            self.ajaxCurrentThreads = 0;
+            self.ajaxAborted = false;
+        },
+        _init: function (options, refreshMode) {
+            var self = this, f, $el = self.$element, $cont, t, tmp;
+            self.options = options;
+            $.each(options, function (key, value) {
+                switch (key) {
+                    case 'minFileCount':
+                    case 'maxFileCount':
+                    case 'maxTotalFileCount':
+                    case 'minFileSize':
+                    case 'maxFileSize':
+                    case 'maxFilePreviewSize':
+                    case 'resizeImageQuality':
+                    case 'resizeIfSizeMoreThan':
+                    case 'progressUploadThreshold':
+                    case 'initialPreviewCount':
+                    case 'zoomModalHeight':
+                    case 'minImageHeight':
+                    case 'maxImageHeight':
+                    case 'minImageWidth':
+                    case 'maxImageWidth':
+                        self[key] = $h.getNum(value);
+                        break;
+                    default:
+                        self[key] = value;
+                        break;
+                }
+            });
+            if (self.maxTotalFileCount > 0 && self.maxTotalFileCount < self.maxFileCount) {
+                self.maxTotalFileCount = self.maxFileCount;
+            }
+            if (self.rtl) { // swap buttons for rtl
+                tmp = self.previewZoomButtonIcons.prev;
+                self.previewZoomButtonIcons.prev = self.previewZoomButtonIcons.next;
+                self.previewZoomButtonIcons.next = tmp;
+            }
+            // validate chunk threads to not exceed maxAjaxThreads
+            if (!isNaN(self.maxAjaxThreads) && self.maxAjaxThreads < self.resumableUploadOptions.maxThreads) {
+                self.resumableUploadOptions.maxThreads = self.maxAjaxThreads;
+            }
+            self._initFileManager();
+            if (typeof self.autoOrientImage === 'function') {
+                self.autoOrientImage = self.autoOrientImage();
+            }
+            if (typeof self.autoOrientImageInitial === 'function') {
+                self.autoOrientImageInitial = self.autoOrientImageInitial();
+            }
+            if (!refreshMode) {
+                self._cleanup();
+            }
+            self.$form = $el.closest('form');
+            self._initTemplateDefaults();
+            self.uploadFileAttr = !$h.isEmpty($el.attr('name')) ? $el.attr('name') : 'file_data';
+            t = self._getLayoutTemplate('progress');
+            self.progressTemplate = t.replace('{class}', self.progressClass);
+            self.progressInfoTemplate = t.replace('{class}', self.progressInfoClass);
+            self.progressPauseTemplate = t.replace('{class}', self.progressPauseClass);
+            self.progressCompleteTemplate = t.replace('{class}', self.progressCompleteClass);
+            self.progressErrorTemplate = t.replace('{class}', self.progressErrorClass);
+            self.isDisabled = $el.attr('disabled') || $el.attr('readonly');
+            if (self.isDisabled) {
+                $el.attr('disabled', true);
+            }
+            self.isClickable = self.browseOnZoneClick && self.showPreview &&
+                (self.dropZoneEnabled || !$h.isEmpty(self.defaultPreviewContent));
+            self.isAjaxUpload = $h.hasFileUploadSupport() && !$h.isEmpty(self.uploadUrl);
+            self.dropZoneEnabled = $h.hasDragDropSupport() && self.dropZoneEnabled;
+            if (!self.isAjaxUpload) {
+                self.dropZoneEnabled = self.dropZoneEnabled && $h.canAssignFilesToInput();
+            }
+            self.slug = typeof options.slugCallback === 'function' ? options.slugCallback : self._slugDefault;
+            self.mainTemplate = self.showCaption ? self._getLayoutTemplate('main1') : self._getLayoutTemplate('main2');
+            self.captionTemplate = self._getLayoutTemplate('caption');
+            self.previewGenericTemplate = self._getPreviewTemplate('generic');
+            if (!self.imageCanvas && self.resizeImage && (self.maxImageWidth || self.maxImageHeight)) {
+                self.imageCanvas = document.createElement('canvas');
+                self.imageCanvasContext = self.imageCanvas.getContext('2d');
+            }
+            if ($h.isEmpty($el.attr('id'))) {
+                $el.attr('id', $h.uniqId());
+            }
+            self.namespace = '.fileinput_' + $el.attr('id').replace(/-/g, '_');
+            if (self.$container === undefined) {
+                self.$container = self._createContainer();
+            } else {
+                self._refreshContainer();
+            }
+            $cont = self.$container;
+            self.$dropZone = $cont.find('.file-drop-zone');
+            self.$progress = $cont.find('.kv-upload-progress');
+            self.$btnUpload = $cont.find('.fileinput-upload');
+            self.$captionContainer = $h.getElement(options, 'elCaptionContainer', $cont.find('.file-caption'));
+            self.$caption = $h.getElement(options, 'elCaptionText', $cont.find('.file-caption-name'));
+            if (!$h.isEmpty(self.msgPlaceholder)) {
+                f = $el.attr('multiple') ? self.filePlural : self.fileSingle;
+                self.$caption.attr('placeholder', self.msgPlaceholder.replace('{files}', f));
+            }
+            self.$captionIcon = self.$captionContainer.find('.file-caption-icon');
+            self.$previewContainer = $h.getElement(options, 'elPreviewContainer', $cont.find('.file-preview'));
+            self.$preview = $h.getElement(options, 'elPreviewImage', $cont.find('.file-preview-thumbnails'));
+            self.$previewStatus = $h.getElement(options, 'elPreviewStatus', $cont.find('.file-preview-status'));
+            self.$errorContainer = $h.getElement(options, 'elErrorContainer',
+                self.$previewContainer.find('.kv-fileinput-error'));
+            self._validateDisabled();
+            if (!$h.isEmpty(self.msgErrorClass)) {
+                $h.addCss(self.$errorContainer, self.msgErrorClass);
+            }
+            if (!refreshMode) {
+                self.$errorContainer.hide();
+                self.previewInitId = 'thumb-' + $el.attr('id');
+                self._initPreviewCache();
+                self._initPreview(true);
+                self._initPreviewActions();
+                if (self.$parent.hasClass('file-loading')) {
+                    self.$container.insertBefore(self.$parent);
+                    self.$parent.remove();
+                }
+            } else {
+                if (!self._errorsExist()) {
+                    self.$errorContainer.hide();
+                }
+            }
+            self._setFileDropZoneTitle();
+            if ($el.attr('disabled')) {
+                self.disable();
+            }
+            self._initZoom();
+            if (self.hideThumbnailContent) {
+                $h.addCss(self.$preview, 'hide-content');
+            }
+        },
+        _initFileManager: function () {
+            var self = this;
+            self.fileManager = {
+                stack: {},
+                processed: [],
+                errors: [],
+                loadedImages: {},
+                totalImages: 0,
+                totalFiles: null,
+                totalSize: null,
+                uploadedSize: 0,
+                stats: {},
+                initStats: function (id) {
+                    var data = {started: $h.now().getTime()};
+                    if (id) {
+                        self.fileManager.stats[id] = data;
+                    } else {
+                        self.fileManager.stats = data;
+                    }
+                },
+                getUploadStats: function (id, loaded, total) {
+                    var fm = self.fileManager, started = id ? fm.stats[id] && fm.stats[id].started || null : null;
+                    if (!started) {
+                        started = $h.now().getTime();
+                    }
+                    var elapsed = ($h.now().getTime() - started) / 1000,
+                        speeds = ['B/s', 'KB/s', 'MB/s', 'GB/s', 'TB/s', 'PB/s', 'EB/s', 'ZB/s', 'YB/s'],
+                        bps = elapsed ? loaded / elapsed : 0, bitrate = self._getSize(bps, speeds),
+                        pendingBytes = total - loaded,
+                        out = {
+                            fileId: id,
+                            started: started,
+                            elapsed: elapsed,
+                            loaded: loaded,
+                            total: total,
+                            bps: bps,
+                            bitrate: bitrate,
+                            pendingBytes: pendingBytes
+                        };
+                    if (id) {
+                        fm.stats[id] = out;
+                    } else {
+                        fm.stats = out;
+                    }
+                    return out;
+                },
+                exists: function (id) {
+                    return $.inArray(id, self.fileManager.getIdList()) !== -1;
+                },
+                count: function () {
+                    return self.fileManager.getIdList().length;
+                },
+                total: function () {
+                    var fm = self.fileManager;
+                    if (!fm.totalFiles) {
+                        fm.totalFiles = fm.count();
+                    }
+                    return fm.totalFiles;
+                },
+                getTotalSize: function () {
+                    var fm = self.fileManager;
+                    if (fm.totalSize) {
+                        return fm.totalSize;
+                    }
+                    fm.totalSize = 0;
+                    $.each(self.fileManager.stack, function (id, f) {
+                        var size = parseFloat(f.size);
+                        fm.totalSize += isNaN(size) ? 0 : size;
+                    });
+                    return fm.totalSize;
+                },
+                add: function (file, id) {
+                    if (!id) {
+                        id = self.fileManager.getId(file);
+                    }
+                    if (!id) {
+                        return;
+                    }
+                    self.fileManager.stack[id] = {
+                        file: file,
+                        name: $h.getFileName(file),
+                        relativePath: $h.getFileRelativePath(file),
+                        size: file.size,
+                        nameFmt: self._getFileName(file, ''),
+                        sizeFmt: self._getSize(file.size)
+                    };
+                },
+                remove: function ($thumb) {
+                    var id = $thumb.attr('data-fileid');
+                    if (id) {
+                        self.fileManager.removeFile(id);
+                    }
+                },
+                removeFile: function (id) {
+                    delete self.fileManager.stack[id];
+                    delete self.fileManager.loadedImages[id];
+                },
+                move: function (idFrom, idTo) {
+                    var result = {}, stack = self.fileManager.stack;
+                    if (!idFrom && !idTo || idFrom === idTo) {
+                        return;
+                    }
+                    $.each(stack, function (k, v) {
+                        if (k !== idFrom) {
+                            result[k] = v;
+                        }
+                        if (k === idTo) {
+                            result[idFrom] = stack[idFrom];
+                        }
+                    });
+                    self.fileManager.stack = result;
+                },
+                list: function () {
+                    var files = [];
+                    $.each(self.fileManager.stack, function (k, v) {
+                        if (v && v.file) {
+                            files.push(v.file);
+                        }
+                    });
+                    return files;
+                },
+                isPending: function (id) {
+                    return $.inArray(id, self.fileManager.processed) === -1 && self.fileManager.exists(id);
+                },
+                isProcessed: function () {
+                    var processed = true, fm = self.fileManager;
+                    $.each(fm.stack, function (id) {
+                        if (fm.isPending(id)) {
+                            processed = false;
+                        }
+                    });
+                    return processed;
+                },
+                clear: function () {
+                    var fm = self.fileManager;
+                    fm.totalFiles = null;
+                    fm.totalSize = null;
+                    fm.uploadedSize = 0;
+                    fm.stack = {};
+                    fm.errors = [];
+                    fm.processed = [];
+                    fm.stats = {};
+                    fm.clearImages();
+                },
+                clearImages: function () {
+                    self.fileManager.loadedImages = {};
+                    self.fileManager.totalImages = 0;
+                },
+                addImage: function (id, config) {
+                    self.fileManager.loadedImages[id] = config;
+                },
+                removeImage: function (id) {
+                    delete self.fileManager.loadedImages[id];
+                },
+                getImageIdList: function () {
+                    return Object.keys(self.fileManager.loadedImages);
+                },
+                getImageCount: function () {
+                    return self.fileManager.getImageIdList().length;
+                },
+                getId: function (file) {
+                    return self._getFileId(file);
+                },
+                getIndex: function (id) {
+                    return self.fileManager.getIdList().indexOf(id);
+                },
+                getThumb: function (id) {
+                    var $thumb = null;
+                    self._getThumbs().each(function () {
+                        var $t = $(this);
+                        if ($t.attr('data-fileid') === id) {
+                            $thumb = $t;
+                        }
+                    });
+                    return $thumb;
+                },
+                getThumbIndex: function ($thumb) {
+                    var id = $thumb.attr('data-fileid');
+                    return self.fileManager.getIndex(id);
+                },
+                getIdList: function () {
+                    return Object.keys(self.fileManager.stack);
+                },
+                getFile: function (id) {
+                    return self.fileManager.stack[id] || null;
+                },
+                getFileName: function (id, fmt) {
+                    var file = self.fileManager.getFile(id);
+                    if (!file) {
+                        return '';
+                    }
+                    return fmt ? (file.nameFmt || '') : file.name || '';
+                },
+                getFirstFile: function () {
+                    var ids = self.fileManager.getIdList(), id = ids && ids.length ? ids[0] : null;
+                    return self.fileManager.getFile(id);
+                },
+                setFile: function (id, file) {
+                    if (self.fileManager.getFile(id)) {
+                        self.fileManager.stack[id].file = file;
+                    } else {
+                        self.fileManager.add(file, id);
+                    }
+                },
+                setProcessed: function (id) {
+                    self.fileManager.processed.push(id);
+                },
+                getProgress: function () {
+                    var total = self.fileManager.total(), processed = self.fileManager.processed.length;
+                    if (!total) {
+                        return 0;
+                    }
+                    return Math.ceil(processed / total * 100);
+
+                },
+                setProgress: function (id, pct) {
+                    var f = self.fileManager.getFile(id);
+                    if (!isNaN(pct) && f) {
+                        f.progress = pct;
+                    }
+                }
+            };
+        },
+        _setUploadData: function (fd, config) {
+            var self = this;
+            $.each(config, function (key, value) {
+                var param = self.uploadParamNames[key] || key;
+                if ($h.isArray(value)) {
+                    fd.append(param, value[0], value[1]);
+                } else {
+                    fd.append(param, value);
+                }
+            });
+        },
+        _initResumableUpload: function () {
+            var self = this, opts = self.resumableUploadOptions, logs = $h.logMessages;
+            if (!self.enableResumableUpload) {
+                return;
+            }
+            if (opts.fallback !== false && typeof opts.fallback !== 'function') {
+                opts.fallback = function (s) {
+                    s._log(logs.noResumableSupport);
+                    s.enableResumableUpload = false;
+                };
+            }
+            if (!$h.hasResumableUploadSupport() && opts.fallback !== false) {
+                opts.fallback(self);
+                return;
+            }
+            if (!self.uploadUrl && self.enableResumableUpload) {
+                self._log(logs.noUploadUrl);
+                self.enableResumableUpload = false;
+                return;
+
+            }
+            opts.chunkSize = parseFloat(opts.chunkSize);
+            if (opts.chunkSize <= 0 || isNaN(opts.chunkSize)) {
+                self._log(logs.invalidChunkSize, {chunkSize: opts.chunkSize});
+                self.enableResumableUpload = false;
+                return;
+            }
+            self.resumableManager = {
+                init: function (id, f, index) {
+                    var rm = self.resumableManager, fm = self.fileManager;
+                    rm.currThreads = 0;
+                    rm.logs = [];
+                    rm.stack = [];
+                    rm.error = '';
+                    rm.chunkIntervalId = null;
+                    rm.id = id;
+                    rm.file = f.file;
+                    rm.fileName = f.name;
+                    rm.fileIndex = index;
+                    rm.completed = false;
+                    rm.testing = false;
+                    rm.lastProgress = 0;
+                    if (self.showPreview) {
+                        rm.$thumb = fm.getThumb(id) || null;
+                        rm.$progress = rm.$btnDelete = null;
+                        if (rm.$thumb && rm.$thumb.length) {
+                            rm.$progress = rm.$thumb.find('.file-thumb-progress');
+                            rm.$btnDelete = rm.$thumb.find('.kv-file-remove');
+                        }
+                    }
+                    rm.chunkSize = self.resumableUploadOptions.chunkSize * 1024;
+                    rm.chunkCount = rm.getTotalChunks();
+                },
+                logAjaxError: function (jqXHR, textStatus, errorThrown) {
+                    if (self.resumableUploadOptions.showErrorLog) {
+                        self._log(logs.ajaxError, {
+                            status: jqXHR.status,
+                            error: errorThrown,
+                            text: jqXHR.responseText || ''
+                        });
+                    }
+                },
+                reset: function () {
+                    var rm = self.resumableManager;
+                    rm.processed = {};
+                },
+                setProcessed: function (status) {
+                    var rm = self.resumableManager, fm = self.fileManager, id = rm.id, msg,
+                        $thumb = rm.$thumb, $prog = rm.$progress, hasThumb = $thumb && $thumb.length,
+                        params = {id: hasThumb ? $thumb.attr('id') : '', index: fm.getIndex(id), fileId: id};
+                    rm.completed = true;
+                    rm.lastProgress = 0;
+                    fm.uploadedSize += rm.file.size;
+                    if (hasThumb) {
+                        $thumb.removeClass('file-uploading');
+                    }
+                    if (status === 'success') {
+                        if (self.showPreview) {
+                            self._setProgress(101, $prog);
+                            self._setThumbStatus($thumb, 'Success');
+                            self._initUploadSuccess(rm.processed[id].data, $thumb);
+                        }
+                        self.fileManager.removeFile(id);
+                        delete rm.processed[id];
+                        self._raise('fileuploaded', [params.id, params.index, params.fileId]);
+                        if (fm.isProcessed()) {
+                            self._setProgress(101);
+                        }
+                    } else {
+                        if (self.showPreview) {
+                            self._setThumbStatus($thumb, 'Error');
+                            self._setPreviewError($thumb, true);
+                            self._setProgress(101, $prog, self.msgProgressError);
+                            self._setProgress(101, self.$progress, self.msgProgressError);
+                            self.cancelling = true;
+                        }
+                        if (!self.$errorContainer.find('li[data-file-id="' + params.fileId + '"]').length) {
+                            msg = self.msgResumableUploadRetriesExceeded.setTokens({
+                                file: rm.fileName,
+                                max: self.resumableUploadOptions.maxRetries,
+                                error: rm.error
+                            });
+                            self._showFileError(msg, params);
+                        }
+                    }
+                    if (fm.isProcessed()) {
+                        rm.reset();
+                    }
+                },
+                check: function () {
+                    var rm = self.resumableManager, status = true;
+                    $.each(rm.logs, function (index, value) {
+                        if (!value) {
+                            status = false;
+                            return false;
+                        }
+                    });
+                    if (status) {
+                        clearInterval(rm.chunkIntervalId);
+                        rm.setProcessed('success');
+                    }
+                },
+                processedResumables: function () {
+                    var logs = self.resumableManager.logs, i, count = 0;
+                    if (!logs || !logs.length) {
+                        return 0;
+                    }
+                    for (i = 0; i < logs.length; i++) {
+                        if (logs[i] === true) {
+                            count++;
+                        }
+                    }
+                    return count;
+                },
+                getUploadedSize: function () {
+                    var rm = self.resumableManager, size = rm.processedResumables() * rm.chunkSize;
+                    return size > rm.file.size ? rm.file.size : size;
+                },
+                getTotalChunks: function () {
+                    var rm = self.resumableManager, chunkSize = parseFloat(rm.chunkSize);
+                    if (!isNaN(chunkSize) && chunkSize > 0) {
+                        return Math.ceil(rm.file.size / chunkSize);
+                    }
+                    return 0;
+                },
+                getProgress: function () {
+                    var rm = self.resumableManager, processed = rm.processedResumables(), total = rm.chunkCount;
+                    if (total === 0) {
+                        return 0;
+                    }
+                    return Math.ceil(processed / total * 100);
+                },
+                checkAborted: function (intervalId) {
+                    if (self.paused || self.cancelling) {
+                        clearInterval(intervalId);
+                        self.unlock();
+                    }
+                },
+                upload: function () {
+                    var rm = self.resumableManager, fm = self.fileManager, ids = fm.getIdList(), flag = 'new',
+                        intervalId;
+                    intervalId = setInterval(function () {
+                        var id;
+                        rm.checkAborted(intervalId);
+                        if (flag === 'new') {
+                            self.lock();
+                            flag = 'processing';
+                            id = ids.shift();
+                            fm.initStats(id);
+                            if (fm.stack[id]) {
+                                rm.init(id, fm.stack[id], fm.getIndex(id));
+                                rm.testUpload();
+                                rm.uploadResumable();
+                            }
+                        }
+                        if (!fm.isPending(id) && rm.completed) {
+                            flag = 'new';
+                        }
+                        if (fm.isProcessed()) {
+                            var $initThumbs = self.$preview.find('.file-preview-initial');
+                            if ($initThumbs.length) {
+                                $h.addCss($initThumbs, $h.SORT_CSS);
+                                self._initSortable();
+                            }
+                            clearInterval(intervalId);
+                            self._clearFileInput();
+                            self.unlock();
+                            setTimeout(function () {
+                                var data = self.previewCache.data;
+                                if (data) {
+                                    self.initialPreview = data.content;
+                                    self.initialPreviewConfig = data.config;
+                                    self.initialPreviewThumbTags = data.tags;
+                                }
+                                self._raise('filebatchuploadcomplete', [
+                                    self.initialPreview,
+                                    self.initialPreviewConfig,
+                                    self.initialPreviewThumbTags,
+                                    self._getExtraData()
+                                ]);
+                            }, self.processDelay);
+                        }
+                    }, self.processDelay);
+                },
+                uploadResumable: function () {
+                    var i, rm = self.resumableManager, total = rm.chunkCount;
+                    for (i = 0; i < total; i++) {
+                        rm.logs[i] = !!(rm.processed[rm.id] && rm.processed[rm.id][i]);
+                    }
+                    for (i = 0; i < total; i++) {
+                        rm.pushAjax(i, 0);
+                    }
+                    rm.chunkIntervalId = setInterval(rm.loopAjax, self.queueDelay);
+                },
+                testUpload: function () {
+                    var rm = self.resumableManager, opts = self.resumableUploadOptions, fd, f,
+                        fm = self.fileManager, id = rm.id, fnBefore, fnSuccess, fnError, fnComplete, outData;
+                    if (!opts.testUrl) {
+                        rm.testing = false;
+                        return;
+                    }
+                    rm.testing = true;
+                    fd = new FormData();
+                    f = fm.stack[id];
+                    self._setUploadData(fd, {
+                        fileId: id,
+                        fileName: f.fileName,
+                        fileSize: f.size,
+                        fileRelativePath: f.relativePath,
+                        chunkSize: rm.chunkSize,
+                        chunkCount: rm.chunkCount
+                    });
+                    fnBefore = function (jqXHR) {
+                        outData = self._getOutData(fd, jqXHR);
+                        self._raise('filetestbeforesend', [id, fm, rm, outData]);
+                    };
+                    fnSuccess = function (data, textStatus, jqXHR) {
+                        outData = self._getOutData(fd, jqXHR, data);
+                        var pNames = self.uploadParamNames, chunksUploaded = pNames.chunksUploaded || 'chunksUploaded',
+                            params = [id, fm, rm, outData];
+                        if (!data[chunksUploaded] || !$h.isArray(data[chunksUploaded])) {
+                            self._raise('filetesterror', params);
+                        } else {
+                            if (!rm.processed[id]) {
+                                rm.processed[id] = {};
+                            }
+                            $.each(data[chunksUploaded], function (key, index) {
+                                rm.logs[index] = true;
+                                rm.processed[id][index] = true;
+                            });
+                            rm.processed[id].data = data;
+                            self._raise('filetestsuccess', params);
+                        }
+                        rm.testing = false;
+                    };
+                    fnError = function (jqXHR, textStatus, errorThrown) {
+                        outData = self._getOutData(fd, jqXHR);
+                        self._raise('filetestajaxerror', [id, fm, rm, outData]);
+                        rm.logAjaxError(jqXHR, textStatus, errorThrown);
+                        rm.testing = false;
+                    };
+                    fnComplete = function () {
+                        self._raise('filetestcomplete', [id, fm, rm, self._getOutData(fd)]);
+                        rm.testing = false;
+                    };
+                    self._ajaxSubmit(fnBefore, fnSuccess, fnComplete, fnError, fd, id, rm.fileIndex, opts.testUrl);
+                },
+                pushAjax: function (index, retry) {
+                    self.resumableManager.stack.push([index, retry]);
+                },
+                sendAjax: function (index, retry) {
+                    var fm = self.fileManager, rm = self.resumableManager, opts = self.resumableUploadOptions, f,
+                        chunkSize = rm.chunkSize, id = rm.id, file = rm.file, $thumb = rm.$thumb,
+                        $btnDelete = rm.$btnDelete;
+                    if (rm.processed[id] && rm.processed[id][index]) {
+                        return;
+                    }
+                    rm.currThreads++;
+                    if (retry > opts.maxRetries) {
+                        rm.setProcessed('error');
+                        return;
+                    }
+                    var fd, outData, fnBefore, fnSuccess, fnError, fnComplete, slice = file.slice ? 'slice' :
+                        (file.mozSlice ? 'mozSlice' : (file.webkitSlice ? 'webkitSlice' : 'slice')),
+                        blob = file[slice](chunkSize * index, chunkSize * (index + 1));
+                    fd = new FormData();
+                    f = fm.stack[id];
+                    self._setUploadData(fd, {
+                        chunkCount: rm.chunkCount,
+                        chunkIndex: index,
+                        chunkSize: chunkSize,
+                        chunkSizeStart: chunkSize * index,
+                        fileBlob: [blob, rm.fileName],
+                        fileId: id,
+                        fileName: rm.fileName,
+                        fileRelativePath: f.relativePath,
+                        fileSize: file.size,
+                        retryCount: retry
+                    });
+                    if (rm.$progress && rm.$progress.length) {
+                        rm.$progress.show();
+                    }
+                    fnBefore = function (jqXHR) {
+                        outData = self._getOutData(fd, jqXHR);
+                        if (self.showPreview) {
+                            if (!$thumb.hasClass('file-preview-success')) {
+                                self._setThumbStatus($thumb, 'Loading');
+                                $h.addCss($thumb, 'file-uploading');
+                            }
+                            $btnDelete.attr('disabled', true);
+                        }
+                        self._raise('filechunkbeforesend', [id, index, retry, fm, rm, outData]);
+                    };
+                    fnSuccess = function (data, textStatus, jqXHR) {
+                        outData = self._getOutData(fd, jqXHR, data);
+                        var paramNames = self.uploadParamNames, chunkIndex = paramNames.chunkIndex || 'chunkIndex',
+                            opts = self.resumableUploadOptions, params = [id, index, retry, fm, rm, outData];
+                        rm.currThreads--;
+                        if (data.error) {
+                            if (opts.showErrorLog) {
+                                self._log(logs.retryStatus, {
+                                    retry: retry + 1,
+                                    filename: rm.fileName,
+                                    chunk: index
+                                });
+                            }
+                            rm.pushAjax(index, retry + 1);
+                            rm.error = data.error;
+                            self._raise('filechunkerror', params);
+                        } else {
+                            rm.logs[data[chunkIndex]] = true;
+                            if (!rm.processed[id]) {
+                                rm.processed[id] = {};
+                            }
+                            rm.processed[id][data[chunkIndex]] = true;
+                            rm.processed[id].data = data;
+                            self._raise('filechunksuccess', params);
+                            rm.check();
+                        }
+                    };
+                    fnError = function (jqXHR, textStatus, errorThrown) {
+                        outData = self._getOutData(fd, jqXHR);
+                        rm.currThreads--;
+                        rm.error = errorThrown;
+                        rm.logAjaxError(jqXHR, textStatus, errorThrown);
+                        self._raise('filechunkajaxerror', [id, index, retry, fm, rm, outData]);
+                        rm.pushAjax(index, retry + 1);
+                    };
+                    fnComplete = function () {
+                        self._raise('filechunkcomplete', [id, index, retry, fm, rm, self._getOutData(fd)]);
+                    };
+                    self._ajaxSubmit(fnBefore, fnSuccess, fnComplete, fnError, fd, id, rm.fileIndex);
+                },
+                loopAjax: function () {
+                    var rm = self.resumableManager;
+                    if (rm.currThreads < self.resumableUploadOptions.maxThreads && !rm.testing) {
+                        var arr = rm.stack.shift(), index;
+                        if (typeof arr !== 'undefined') {
+                            index = arr[0];
+                            if (!rm.processed[rm.id] || !rm.processed[rm.id][index]) {
+                                rm.sendAjax(index, arr[1]);
+                            } else {
+                                if (rm.processedResumables() >= rm.getTotalChunks()) {
+                                    rm.setProcessed('success');
+                                    clearInterval(rm.chunkIntervalId);
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+            self.resumableManager.reset();
+        },
+        _initTemplateDefaults: function () {
+            var self = this, tMain1, tMain2, tPreview, tFileIcon, tClose, tCaption, tBtnDefault, tBtnLink, tBtnBrowse,
+                tModalMain, tModal, tProgress, tSize, tFooter, tActions, tActionDelete, tActionUpload, tActionDownload,
+                tActionZoom, tActionDrag, tIndicator, tTagBef, tTagBef1, tTagBef2, tTagAft, tGeneric, tHtml, tImage,
+                tText, tOffice, tGdocs, tVideo, tAudio, tFlash, tObject, tPdf, tOther, tStyle, tZoomCache, vDefaultDim,
+                tStats;
+            tMain1 = '{preview}\n' +
+                '<div class="kv-upload-progress kv-hidden"></div><div class="clearfix"></div>\n' +
+                '<div class="input-group {class}">\n' +
+                '  {caption}\n' +
+                '<div class="input-group-btn input-group-append">\n' +
+                '      {remove}\n' +
+                '      {cancel}\n' +
+                '      {pause}\n' +
+                '      {upload}\n' +
+                '      {browse}\n' +
+                '    </div>\n' +
+                '</div>';
+            tMain2 = '{preview}\n<div class="kv-upload-progress kv-hidden"></div>\n<div class="clearfix"></div>\n' +
+                '{remove}\n{cancel}\n{upload}\n{browse}\n';
+            tPreview = '<div class="file-preview {class}">\n' +
+                '  {close}' +
+                '  <div class="{dropClass} clearfix">\n' +
+                '    <div class="file-preview-thumbnails clearfix">\n' +
+                '    </div>\n' +
+                '    <div class="file-preview-status text-center text-success"></div>\n' +
+                '    <div class="kv-fileinput-error"></div>\n' +
+                '  </div>\n' +
+                '</div>';
+            tClose = $h.closeButton('fileinput-remove');
+            tFileIcon = '<i class="glyphicon glyphicon-file"></i>';
+            // noinspection HtmlUnknownAttribute
+            tCaption = '<div class="file-caption form-control {class}" tabindex="500">\n' +
+                '  <span class="file-caption-icon"></span>\n' +
+                '  <input class="file-caption-name" onkeydown="return false;" onpaste="return false;">\n' +
+                '</div>';
+            //noinspection HtmlUnknownAttribute
+            tBtnDefault = '<button type="{type}" tabindex="500" title="{title}" class="{css}" ' +
+                '{status}>{icon} {label}</button>';
+            //noinspection HtmlUnknownTarget,HtmlUnknownAttribute
+            tBtnLink = '<a href="{href}" tabindex="500" title="{title}" class="{css}" {status}>{icon} {label}</a>';
+            //noinspection HtmlUnknownAttribute
+            tBtnBrowse = '<div tabindex="500" class="{css}" {status}>{icon} {label}</div>';
+            tModalMain = '<div id="' + $h.MODAL_ID + '" class="file-zoom-dialog modal fade" ' +
+                'tabindex="-1" aria-labelledby="' + $h.MODAL_ID + 'Label"></div>';
+            tModal = '<div class="modal-dialog modal-lg{rtl}" role="document">\n' +
+                '  <div class="modal-content">\n' +
+                '    <div class="modal-header">\n' +
+                '      <h5 class="modal-title">{heading}</h5>\n' +
+                '      <span class="kv-zoom-title"></span>\n' +
+                '      <div class="kv-zoom-actions">{toggleheader}{fullscreen}{borderless}{close}</div>\n' +
+                '    </div>\n' +
+                '    <div class="modal-body">\n' +
+                '      <div class="floating-buttons"></div>\n' +
+                '      <div class="kv-zoom-body file-zoom-content {zoomFrameClass}"></div>\n' + '{prev} {next}\n' +
+                '    </div>\n' +
+                '  </div>\n' +
+                '</div>\n';
+            tProgress = '<div class="progress">\n' +
+                '    <div class="{class}" role="progressbar"' +
+                ' aria-valuenow="{percent}" aria-valuemin="0" aria-valuemax="100" style="width:{percent}%;">\n' +
+                '        {status}\n' +
+                '     </div>\n' +
+                '</div>{stats}';
+            tStats = '<div class="text-info file-upload-stats">' +
+                '<span class="pending-time">{pendingTime}</span> ' +
+                '<span class="upload-speed">{uploadSpeed}</span>' +
+                '</div>';
+            tSize = ' <samp>({sizeText})</samp>';
+            tFooter = '<div class="file-thumbnail-footer">\n' +
+                '    <div class="file-footer-caption" title="{caption}">\n' +
+                '        <div class="file-caption-info">{caption}</div>\n' +
+                '        <div class="file-size-info">{size}</div>\n' +
+                '    </div>\n' +
+                '    {progress}\n{indicator}\n{actions}\n' +
+                '</div>';
+            tActions = '<div class="file-actions">\n' +
+                '    <div class="file-footer-buttons">\n' +
+                '        {download} {upload} {delete} {zoom} {other}' +
+                '    </div>\n' +
+                '</div>\n' +
+                '{drag}\n' +
+                '<div class="clearfix"></div>';
+            //noinspection HtmlU
